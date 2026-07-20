@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>Flask JWT 無狀態認證留言板 (Day 6)</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background-color: #f8f9fa; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #343a40; color: white; padding: 15px; border-radius: 5px; }
+        .message-box { border: 1px solid #ddd; padding: 15px; margin-bottom: 12px; border-radius: 6px; background-color: white; transition: all 0.3s ease; }
+        .message-box.newly-added { border-left: 5px solid #28a745; background-color: #f4fff4; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], input[type="password"], textarea { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        button:hover { background-color: #0056b3; }
+        .btn-danger { background-color: #dc3545; }
+        .btn-danger:hover { background-color: #bd2130; }
+        .alert { padding: 12px; margin-bottom: 20px; border-radius: 4px; border: 1px solid transparent; }
+        .alert-success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+        .alert-danger { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+        .alert-warning { color: #856404; background-color: #fff3cd; border-color: #ffeeba; }
+        .meta-info { color: #666; font-size: 13px; margin-bottom: 5px; }
+        .meta-info strong { color: #333; }
+        .auth-container { border: 1px dashed #007bff; padding: 15px; margin-bottom: 20px; border-radius: 5px; background: #eef5ff; }
+    </style>
+</head>
+<body>
+
+    <!-- 頂部狀態列 -->
+    <div class="header-bar">
+        <h3>🔒 Day 6 JWT 留言板</h3>
+        <div id="auth-status">
+            <!-- 由 JS 依據 localStorage 內的 Token 動態渲染 -->
+            載入認證狀態中...
+        </div>
+    </div>
+
+    <!-- 用於動態顯示 API 執行結果的 Alert 容器 -->
+    <div id="ajax-alert" style="display: none;" class="alert"></div>
+
+    <!-- 登入區塊 (若未登入則顯示) -->
+    <div id="login-section" class="auth-container" style="display: none;">
+        <h4>🔑 會員 API 認證登入 (JWT 簽發)</h4>
+        <form id="api-login-form">
+            <div class="form-group">
+                <label>帳號：</label>
+                <input type="text" id="login-username" required placeholder="請輸入 admin 或自註冊帳號">
+            </div>
+            <div class="form-group">
+                <label>密碼：</label>
+                <input type="password" id="login-password" required placeholder="預設密碼 admin123">
+            </div>
+            <button type="submit">進行 JWT 安全登入</button>
+        </form>
+    </div>
+
+    <!-- 留言輸入表單 (受 JWT 保護) -->
+    <div id="post-section" style="display: none;">
+        <form id="comment-form">
+            <div class="form-group">
+                <label for="message">發表留言：</label>
+                <textarea id="message" rows="3" placeholder="請輸入留言內容... 系統會自動在 Headers 夾帶 Bearer Token 送出！" required></textarea>
+            </div>
+            <button type="submit" style="background-color: #28a745;">送出留言 (JWT 授權)</button>
+        </form>
+    </div>
+    
+    <div id="anonymous-tips" class="alert alert-warning" style="display: none; text-align: center;">
+        🔒 <strong>無狀態提示：</strong> 偵測到您目前為訪客。請使用上面的表單進行 **JWT 登入**，簽發 Token 後方可發文。
+    </div>
+
+    <hr>
+
+    <h3>💬 留言列表 (AJAX 異步拉取)</h3>
+    <div id="messages-container">
+        <!-- 留言由下方 JS 或後端首次加載渲染 -->
+        {% for msg in messages %}
+            <div class="message-box" id="msg-{{ msg.id }}">
+                <div class="meta-info">使用者 <strong>{{ msg.author.username }}</strong> 發表：</div>
+                <p style="margin: 0; padding-top: 5px; line-height: 1.5;">{{ msg.content }}</p>
+            </div>
+        {% else %}
+            <p id="no-msg-tips" style="text-align: center; color: #999;">目前沒有任何留言。</p>
+        {% endfor %}
+    </div>
+
+    <script>
+        const authStatus = document.getElementById('auth-status');
+        const loginSection = document.getElementById('login-section');
+        const postSection = document.getElementById('post-section');
+        const anonymousTips = document.getElementById('anonymous-tips');
+        const loginForm = document.getElementById('api-login-form');
+        const commentForm = document.getElementById('comment-form');
+        const messageInput = document.getElementById('message');
+        const container = document.getElementById('messages-container');
+        const noMsgTips = document.getElementById('no-msg-tips');
+        const alertBox = document.getElementById('ajax-alert');
+
+        // 初始化檢查用戶登入狀態
+        function checkAuth() {
+            const token = localStorage.getItem('jwt_token');
+            const username = localStorage.getItem('username');
+
+            if (token && username) {
+                // 已登入：渲染登入狀態，顯示留言輸入區
+                authStatus.innerHTML = `👤 已簽發憑證：<strong>${username}</strong> <button onclick="logout()" class="btn-danger" style="padding: 2px 8px; font-size: 11px;">登出</button>`;
+                loginSection.style.display = 'none';
+                postSection.style.display = 'block';
+                anonymousTips.style.display = 'none';
+            } else {
+                // 未登入：顯示登入區，隱藏留言輸入區
+                authStatus.innerHTML = `👤 狀態：<strong>訪客 (Stateless)</strong>`;
+                loginSection.style.display = 'block';
+                postSection.style.display = 'none';
+                anonymousTips.style.display = 'block';
+            }
+        }
+
+        // 登入事件處理 (向後端獲取 JWT)
+        if (loginForm) {
+            loginForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const username = document.getElementById('login-username').value.trim();
+                const password = document.getElementById('login-password').value;
+
+                fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                })
+                .then(response => {
+                    if (response.status === 200) return response.json();
+                    throw new Error('帳號或密碼錯誤！');
+                })
+                .then(data => {
+                    // 將後端簽發的 JWT 與用戶資訊永久儲存於客戶端 localStorage 中
+                    localStorage.setItem('jwt_token', data.token);
+                    localStorage.setItem('username', data.username);
+                    
+                    showAjaxAlert('success', `✅ 登入成功！Token 已儲存至 localStorage。`);
+                    checkAuth();
+                })
+                .catch(err => {
+                    showAjaxAlert('danger', `❌ 登入失敗：${err.message}`);
+                });
+            });
+        }
+
+        // 登出事件處理 (純前端清除 Token)
+        window.logout = function() {
+            localStorage.removeItem('jwt_token');
+            localStorage.removeItem('username');
+            showAjaxAlert('success', '✅ 憑證已清除，安全登出！(後端完全無狀態，無須調用 API)');
+            checkAuth();
+        }
+
+        // 受 JWT 保護的發文事件處理 (AJAX + Auth Header)
+        if (commentForm) {
+            commentForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const contentText = messageInput.value.trim();
+                if (!contentText) return;
+
+                const token = localStorage.getItem('jwt_token');
+
+                fetch('/api/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // 關鍵步驟：在 HTTP Request Headers 中夾帶 JWT Bearer Token！
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ content: contentText })
+                })
+                .then(response => {
+                    if (response.status === 201) return response.json();
+                    if (response.status === 401) {
+                        logout(); // Token 過期或失效，執行登出
+                        throw new Error('認證已過期或失效，請重新登入！');
+                    }
+                    return response.json().then(err => { throw new Error(err.message); });
+                })
+                .then(newMsg => {
+                    if (noMsgTips) noMsgTips.style.display = 'none';
+
+                    // 動態渲染新留言至網頁頂端
+                    const newMessageBox = document.createElement('div');
+                    newMessageBox.className = 'message-box newly-added';
+                    newMessageBox.id = `msg-${newMsg.id}`;
+                    newMessageBox.innerHTML = `
+                        <div class="meta-info">使用者 <strong>${newMsg.username}</strong> 發表 (剛剛)：</div>
+                        <p style="margin: 0; padding-top: 5px; line-height: 1.5;">${newMsg.content}</p>
+                    `;
+                    container.insertBefore(newMessageBox, container.firstChild);
+                    messageInput.value = '';
+
+                    showAjaxAlert('success', '✅ 發文成功！已成功傳遞 Bearer Token 通過後端裝飾器認證。');
+                    
+                    setTimeout(() => {
+                        newMessageBox.classList.remove('newly-added');
+                    }, 3000);
+                })
+                .catch(err => {
+                    showAjaxAlert('danger', `❌ 失敗：${err.message}`);
+                });
+            });
+        }
+
+        // 動態 Alert 提示功能
+        function showAjaxAlert(type, message) {
+            alertBox.style.display = 'block';
+            alertBox.className = `alert alert-${type}`;
+            alertBox.innerText = message;
+            setTimeout(() => { alertBox.style.display = 'none'; }, 5000);
+        }
+
+        // 頁面初始化加載
+        checkAuth();
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}我的 Flask 網站{% endblock %}</title>
+</head>
+<body>
+    <header>
+        <nav>首頁 | 關於我們</nav>
+    </header>
+
+    <main>
+        <!-- 留空給子模板填充 -->
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>© 2026 ERB Flask Course</p>
+    </footer>
+</body>
+</html>

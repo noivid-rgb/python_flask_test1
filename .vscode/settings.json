@@ -1,7 +1,7 @@
 {
     "python-envs.pythonProjects": [
         {
-            "path": "Day3",
+            "path": "Day2-templates",
             "envManager": "ms-python.python:venv",
             "packageManager": "ms-python.python:pip"
         }
