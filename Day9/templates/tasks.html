@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Day 9 Celery 非同步任務</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; background: #f4f7fb; color: #172033; }
+        main { background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 8px 24px #17203318; }
+        section { border-top: 1px solid #e3e8ef; margin-top: 1.5rem; padding-top: 1rem; }
+        form { display: grid; gap: .7rem; margin: 1rem 0; }
+        input, textarea, button { font: inherit; padding: .65rem; border: 1px solid #c9d2df; border-radius: 5px; }
+        button { border: 0; color: white; background: #1769aa; cursor: pointer; }
+        button:hover { background: #0d4f82; }
+        .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+        #status { min-height: 1.5rem; color: #1769aa; }
+        .error { color: #b42318 !important; }
+        pre { white-space: pre-wrap; background: #f1f4f8; padding: 1rem; border-radius: 5px; }
+        code { background: #eef2f6; padding: .1rem .3rem; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Day 9 非同步 AI 任務</h1>
+        <p id="status" aria-live="polite">Flask 會立即回傳 task id，Celery worker 背景處理任務。</p>
+        <section>
+            <h2>登入</h2>
+            <form id="login-form">
+                <input id="username" placeholder="帳號：admin" required>
+                <input id="password" type="password" placeholder="密碼：admin123" required>
+                <div class="actions"><button type="submit">取得 JWT</button><button id="logout" type="button">清除 Token</button></div>
+            </form>
+            <p>狀態：<code id="token-state">未登入</code></p>
+        </section>
+        <section>
+            <h2>提交長任務</h2>
+            <form id="task-form">
+                <textarea id="question" rows="4" maxlength="1000" placeholder="例如：分析一份長文件並整理重點" required></textarea>
+                <label>模擬耗時（秒）：<input id="delay" type="number" min="0" max="30" value="5"></label>
+                <button type="submit">提交到 Celery</button>
+            </form>
+            <p id="task-id">尚未提交任務。</p>
+            <pre id="result">等待結果...</pre>
+        </section>
+    </main>
+    <script>
+        const statusBox = document.querySelector('#status');
+        const token = () => localStorage.getItem('jwt_token');
+        function status(message, error = false) { statusBox.textContent = message; statusBox.classList.toggle('error', error); }
+        function updateToken() { document.querySelector('#token-state').textContent = token() ? 'JWT 已儲存' : '未登入'; }
+        async function requestJson(url, options = {}) {
+            const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || JSON.stringify(data.details) || 'API request failed');
+            return data;
+        }
+        async function pollTask(taskId) {
+            const data = await requestJson(`/api/tasks/${taskId}`, { headers: { Authorization: `Bearer ${token()}` } });
+            document.querySelector('#result').textContent = JSON.stringify(data, null, 2);
+            status(`任務狀態：${data.status}`);
+            if (['SUCCESS', 'FAILURE', 'REVOKED'].includes(data.status)) return;
+            setTimeout(() => pollTask(taskId).catch((error) => status(error.message, true)), 1000);
+        }
+        document.querySelector('#login-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const data = await requestJson('/api/login', { method: 'POST', body: JSON.stringify({ username: username.value.trim(), password: password.value }) });
+                localStorage.setItem('jwt_token', data.token); updateToken(); status(`登入成功：${data.username}`);
+            } catch (error) { status(error.message, true); }
+        });
+        document.querySelector('#logout').addEventListener('click', () => { localStorage.removeItem('jwt_token'); updateToken(); status('Token 已清除。'); });
+        document.querySelector('#task-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const data = await requestJson('/api/tasks', { method: 'POST', headers: { Authorization: `Bearer ${token()}` }, body: JSON.stringify({ question: question.value, delay_seconds: Number(delay.value) }) });
+                document.querySelector('#task-id').textContent = `Task ID：${data.task_id}`;
+                document.querySelector('#result').textContent = JSON.stringify(data, null, 2);
+                status('任務已排入 queue，開始輪詢狀態。');
+                await pollTask(data.task_id);
+            } catch (error) { status(error.message, true); }
+        });
+        updateToken();
+    </script>
+</body>
+</html>
