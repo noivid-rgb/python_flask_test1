@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Day 8 RAG 智能問答</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 780px; margin: 2rem auto; padding: 0 1rem; background: #f4f7fb; color: #172033; }
+        main { background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 8px 24px #17203318; }
+        section { border-top: 1px solid #e3e8ef; margin-top: 1.5rem; padding-top: 1rem; }
+        form { display: grid; gap: .7rem; margin: 1rem 0; }
+        input, textarea, button { font: inherit; padding: .65rem; border: 1px solid #c9d2df; border-radius: 5px; }
+        button { border: 0; color: white; background: #1769aa; cursor: pointer; }
+        button:hover { background: #0d4f82; }
+        .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+        #status { min-height: 1.5rem; color: #1769aa; }
+        .error { color: #b42318 !important; }
+        pre { white-space: pre-wrap; background: #f1f4f8; padding: 1rem; border-radius: 5px; }
+        .source { border-left: 3px solid #1769aa; padding: .5rem .8rem; margin: .5rem 0; background: #f7faff; }
+        code { background: #eef2f6; padding: .1rem .3rem; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Day 8 RAG 智能問答</h1>
+        <p id="status" aria-live="polite">先登入，然後向企業私有知識庫提問。</p>
+        <section>
+            <h2>登入</h2>
+            <form id="login-form">
+                <input id="username" type="text" placeholder="帳號：admin" required>
+                <input id="password" type="password" placeholder="密碼：admin123" required>
+                <div class="actions"><button type="submit">取得 JWT</button><button id="logout" type="button">清除 Token</button></div>
+            </form>
+            <p>狀態：<code id="token-state">未登入</code></p>
+        </section>
+        <section>
+            <h2>知識庫問答</h2>
+            <form id="ask-form">
+                <textarea id="question" rows="4" maxlength="1000" placeholder="例如：退款期限是幾多日？" required></textarea>
+                <label>檢索數量：<input id="top-k" type="number" min="1" max="5" value="3"></label>
+                <button type="submit">檢索並回答</button>
+            </form>
+            <h3>AI 回應</h3>
+            <pre id="answer">尚未提問。</pre>
+            <h3>Retrieved sources</h3>
+            <div id="sources"><p>尚未有檢索結果。</p></div>
+        </section>
+    </main>
+    <script>
+        const statusBox = document.querySelector('#status');
+        const tokenState = document.querySelector('#token-state');
+        const token = () => localStorage.getItem('jwt_token');
+        function status(message, error = false) { statusBox.textContent = message; statusBox.classList.toggle('error', error); }
+        function updateToken() { tokenState.textContent = token() ? 'JWT 已儲存' : '未登入'; }
+        async function requestJson(url, options = {}) {
+            const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || JSON.stringify(data.details) || 'API request failed');
+            return data;
+        }
+        document.querySelector('#login-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const data = await requestJson('/api/login', { method: 'POST', body: JSON.stringify({ username: username.value.trim(), password: password.value }) });
+                localStorage.setItem('jwt_token', data.token); updateToken(); status(`登入成功：${data.username}`);
+            } catch (error) { status(error.message, true); }
+        });
+        document.querySelector('#logout').addEventListener('click', () => { localStorage.removeItem('jwt_token'); updateToken(); status('Token 已清除。'); });
+        document.querySelector('#ask-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const data = await requestJson('/api/ask', { method: 'POST', headers: { Authorization: `Bearer ${token()}` }, body: JSON.stringify({ question: question.value, top_k: Number(document.querySelector('#top-k').value) }) });
+                document.querySelector('#answer').textContent = `[${data.provider}/${data.model}]\n${data.answer}`;
+                const sources = document.querySelector('#sources'); sources.replaceChildren();
+                data.sources.forEach((item) => { const source = document.createElement('div'); source.className = 'source'; source.textContent = `${item.source} #${item.chunk_id} (score: ${item.score})\n${item.text}`; sources.append(source); });
+                if (!data.sources.length) sources.textContent = '沒有找到相似資料。';
+                status('RAG 回應已完成，來源可在下方核對。');
+            } catch (error) { status(error.message, true); }
+        });
+        updateToken();
+    </script>
+</body>
+</html>
