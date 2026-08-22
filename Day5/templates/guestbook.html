@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Day 5 RESTful API 留言板</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; background: #f4f7fb; color: #172033; }
+        main { background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 8px 24px #17203318; }
+        form { display: grid; gap: .7rem; margin: 1rem 0 1.5rem; }
+        input, textarea, button { font: inherit; padding: .65rem; border: 1px solid #c9d2df; border-radius: 5px; }
+        button { border: 0; color: white; background: #1769aa; cursor: pointer; }
+        button:hover { background: #0d4f82; }
+        .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+        .message { border-top: 1px solid #e3e8ef; padding: 1rem 0; }
+        .meta { color: #637083; font-size: .9rem; }
+        #status { min-height: 1.5rem; color: #1769aa; }
+        .error { color: #b42318 !important; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Day 5 RESTful API 留言板</h1>
+        <p id="status" aria-live="polite">正在從 API 載入留言...</p>
+
+        <section>
+            <h2>會員登入</h2>
+            <form id="login-form">
+                <input id="username" type="text" placeholder="帳號，例如 admin" required>
+                <input id="password" type="password" placeholder="密碼，例如 admin123" required>
+                <div class="actions">
+                    <button type="submit">登入</button>
+                    <button id="register-button" type="button">註冊帳號</button>
+                    <button id="logout-button" type="button">登出</button>
+                </div>
+            </form>
+        </section>
+
+        <section>
+            <h2>發表留言</h2>
+            <form id="message-form">
+                <textarea id="content" rows="3" placeholder="登入後輸入留言..." required></textarea>
+                <button type="submit">以 Fetch API 送出</button>
+            </form>
+        </section>
+
+        <section>
+            <h2>留言列表</h2>
+            <div id="messages"><p>載入中...</p></div>
+        </section>
+    </main>
+
+    <script>
+        const statusBox = document.querySelector('#status');
+        const messagesBox = document.querySelector('#messages');
+        const messageForm = document.querySelector('#message-form');
+
+        function showStatus(message, isError = false) {
+            statusBox.textContent = message;
+            statusBox.classList.toggle('error', isError);
+        }
+
+        async function requestJson(url, options = {}) {
+            const response = await fetch(url, {
+                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                ...options,
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'API request failed');
+            return data;
+        }
+
+        function renderMessages(messages) {
+            messagesBox.replaceChildren();
+            if (!messages.length) {
+                messagesBox.innerHTML = '<p>目前沒有留言。</p>';
+                return;
+            }
+            messages.forEach((message) => {
+                const item = document.createElement('article');
+                item.className = 'message';
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                meta.textContent = `${message.username} #${message.id}`;
+                const content = document.createElement('p');
+                content.textContent = message.content;
+                item.append(meta, content);
+                messagesBox.append(item);
+            });
+        }
+
+        async function loadMessages() {
+            try {
+                renderMessages(await requestJson('/api/messages', { method: 'GET' }));
+                showStatus('留言已由 GET /api/messages 載入。');
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+        }
+
+        document.querySelector('#login-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const username = document.querySelector('#username').value.trim();
+                const password = document.querySelector('#password').value;
+                const data = await requestJson('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+                showStatus(`登入成功：${data.username}`);
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+        });
+
+        document.querySelector('#register-button').addEventListener('click', async () => {
+            const username = document.querySelector('#username').value.trim();
+            const password = document.querySelector('#password').value;
+            try {
+                await requestJson('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) });
+                showStatus('註冊成功，請再按登入。');
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+        });
+
+        document.querySelector('#logout-button').addEventListener('click', async () => {
+            await requestJson('/api/logout', { method: 'POST', body: '{}' });
+            showStatus('已登出。');
+        });
+
+        messageForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const content = document.querySelector('#content').value;
+                await requestJson('/api/messages', { method: 'POST', body: JSON.stringify({ content }) });
+                renderMessages(await requestJson('/api/messages', { method: 'GET' }));
+                messageForm.reset();
+                showStatus('留言已建立，頁面沒有重新整理。');
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+        });
+
+        loadMessages();
+    </script>
+</body>
+</html>
