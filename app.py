@@ -20,4 +20,4 @@ def hello (name='Nobody'):
 def hi(name='Nobody'):
     list = {'Python','Java','C++'} 
 #hi.html place in templates folder
-    return render_template ('hi.html',name=name,list=list) 
+    return render_template ('hi.html',name=name,list=list)
