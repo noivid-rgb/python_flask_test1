@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Day 7 API 數據驗證與 AI</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; background: #f4f7fb; color: #172033; }
+        main { background: white; padding: 1.5rem; border-radius: 10px; box-shadow: 0 8px 24px #17203318; }
+        section { border-top: 1px solid #e3e8ef; margin-top: 1.5rem; padding-top: 1rem; }
+        form { display: grid; gap: .7rem; margin: 1rem 0; }
+        input, textarea, button { font: inherit; padding: .65rem; border: 1px solid #c9d2df; border-radius: 5px; }
+        button { border: 0; color: white; background: #1769aa; cursor: pointer; }
+        button:hover { background: #0d4f82; }
+        .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+        .message { border-top: 1px solid #e3e8ef; padding: 1rem 0; }
+        .meta { color: #637083; font-size: .9rem; }
+        #status { min-height: 1.5rem; color: #1769aa; }
+        .error { color: #b42318 !important; }
+        pre { white-space: pre-wrap; background: #f1f4f8; padding: 1rem; border-radius: 5px; }
+        code { background: #eef2f6; padding: .1rem .3rem; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Day 7 API 數據驗證與 AI</h1>
+        <p id="status" aria-live="polite">請先登入；公開留言會用 Marshmallow 序列化。</p>
+
+        <section>
+            <h2>JWT 登入</h2>
+            <form id="login-form">
+                <input id="username" type="text" placeholder="帳號，例如 admin" required>
+                <input id="password" type="password" placeholder="密碼，例如 admin123" required>
+                <div class="actions">
+                    <button type="submit">登入</button>
+                    <button id="register-button" type="button">註冊</button>
+                    <button id="logout-button" type="button">清除 Token</button>
+                </div>
+            </form>
+            <p>Token：<code id="token-state">未儲存</code></p>
+        </section>
+
+        <section>
+            <h2>留言 API</h2>
+            <form id="message-form">
+                <textarea id="content" rows="3" placeholder="登入後輸入留言..." required></textarea>
+                <button type="submit">新增留言</button>
+            </form>
+            <div id="messages"><p>載入中...</p></div>
+        </section>
+
+        <section>
+            <h2>LLM API 對話</h2>
+            <form id="chat-form">
+                <textarea id="prompt" rows="4" maxlength="2000" placeholder="例如：用三句話解釋 REST API" required></textarea>
+                <button type="submit">送出到 /api/chat</button>
+            </form>
+            <pre id="answer">尚未收到 AI 回應。</pre>
+        </section>
+    </main>
+
+    <script>
+        const statusBox = document.querySelector('#status');
+        const messagesBox = document.querySelector('#messages');
+        const tokenState = document.querySelector('#token-state');
+        const token = () => localStorage.getItem('jwt_token');
+
+        function showStatus(message, isError = false) {
+            statusBox.textContent = message;
+            statusBox.classList.toggle('error', isError);
+        }
+
+        function updateTokenState() {
+            tokenState.textContent = token() ? '已儲存於 localStorage' : '未儲存';
+        }
+
+        async function requestJson(url, options = {}) {
+            const response = await fetch(url, {
+                ...options,
+                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                const details = data.details ? JSON.stringify(data.details) : data.message;
+                throw new Error(details || 'API request failed');
+            }
+            return data;
+        }
+
+        function renderMessages(messages) {
+            messagesBox.replaceChildren();
+            messages.forEach((message) => {
+                const item = document.createElement('article');
+                item.className = 'message';
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                meta.textContent = `${message.username} #${message.id}`;
+                const content = document.createElement('p');
+                content.textContent = message.content;
+                item.append(meta, content);
+                messagesBox.append(item);
+            });
+            if (!messages.length) messagesBox.innerHTML = '<p>目前沒有留言。</p>';
+        }
+
+        async function loadMessages() {
+            try { renderMessages(await requestJson('/api/messages', { method: 'GET' })); }
+            catch (error) { showStatus(error.message, true); }
+        }
+
+        document.querySelector('#login-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const username = document.querySelector('#username').value.trim();
+                const password = document.querySelector('#password').value;
+                const data = await requestJson('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+                localStorage.setItem('jwt_token', data.token);
+                updateTokenState();
+                showStatus(`登入成功：${data.username}`);
+            } catch (error) { showStatus(error.message, true); }
+        });
+
+        document.querySelector('#register-button').addEventListener('click', async () => {
+            try {
+                const username = document.querySelector('#username').value.trim();
+                const password = document.querySelector('#password').value;
+                await requestJson('/api/register', { method: 'POST', body: JSON.stringify({ username, password }) });
+                showStatus('註冊成功，請再登入。');
+            } catch (error) { showStatus(error.message, true); }
+        });
+
+        document.querySelector('#logout-button').addEventListener('click', () => {
+            localStorage.removeItem('jwt_token');
+            updateTokenState();
+            showStatus('Token 已清除。');
+        });
+
+        document.querySelector('#message-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                await requestJson('/api/messages', {
+                    method: 'POST', headers: { Authorization: `Bearer ${token()}` },
+                    body: JSON.stringify({ content: document.querySelector('#content').value }),
+                });
+                event.target.reset(); await loadMessages(); showStatus('留言已建立。');
+            } catch (error) { showStatus(error.message, true); }
+        });
+
+        document.querySelector('#chat-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const data = await requestJson('/api/chat', {
+                    method: 'POST', headers: { Authorization: `Bearer ${token()}` },
+                    body: JSON.stringify({ prompt: document.querySelector('#prompt').value, temperature: 0.7 }),
+                });
+                document.querySelector('#answer').textContent = `[${data.provider}/${data.model}]\n${data.answer}`;
+                showStatus('AI 回應已收到。');
+            } catch (error) { showStatus(error.message, true); }
+        });
+
+        updateTokenState();
+        loadMessages();
+    </script>
+</body>
+</html>
