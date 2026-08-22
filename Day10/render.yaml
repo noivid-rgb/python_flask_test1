@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: flask-day10-demo
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
