@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ERB Day 6 - 系統認證中心 (JWT 安全版)</title>
+    <!-- 使用 Tailwind CSS CDN 進行高美感排版 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome 圖標 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 50%, #1d4ed8 100%);
+        }
+        .fade-transition {
+            transition: all 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="gradient-bg min-h-screen flex items-center justify-center p-4 md:p-8 font-sans">
+
+    <!-- 主容器 -->
+    <div class="w-full max-w-md">
+        
+        <!-- 頂部 LOGO 與標題 -->
+        <div class="text-center mb-6">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/10 text-white text-3xl mb-3 shadow-lg">
+                <i class="fa-solid fa-shield-halved animate-pulse text-yellow-300"></i>
+            </div>
+            <h1 class="text-3xl font-extrabold text-white tracking-tight">ERB 系統認證中心</h1>
+            <p class="text-blue-100 text-sm mt-1">Python Flask & JWT 無狀態安全防護系統 (Day 6)</p>
+        </div>
+
+        <!-- 動態 Alert 提示框 -->
+        <div id="alert-box" class="hidden mb-4 p-4 rounded-xl shadow-md border fade-transition flex items-center gap-3">
+            <span id="alert-icon" class="text-lg"></span>
+            <span id="alert-message" class="text-sm font-semibold"></span>
+        </div>
+
+        <!-- 玻璃擬態卡片外殼 -->
+        <div class="glass-card rounded-2xl shadow-2xl overflow-hidden p-8 fade-transition">
+            
+            <!-- 頁籤導航 (Tabs) -->
+            <div class="flex border-b border-gray-200 mb-6">
+                <button id="tab-login" onclick="switchCard('login')" class="flex-1 py-3 text-center font-bold text-blue-600 border-b-2 border-blue-600 focus:outline-none transition-all duration-300">
+                    <i class="fa-solid fa-key mr-2"></i>會員登入
+                </button>
+                <button id="tab-register" onclick="switchCard('register')" class="flex-1 py-3 text-center font-bold text-gray-500 hover:text-blue-600 focus:outline-none transition-all duration-300">
+                    <i class="fa-solid fa-user-plus mr-2"></i>帳號註冊
+                </button>
+            </div>
+
+            <!-- ============================== 登入表單區塊 ============================== -->
+            <div id="login-form-wrapper" class="block">
+                <form id="login-form" onsubmit="handleLogin(event)" class="space-y-5">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-1.5" for="login-username">
+                            <i class="fa-solid fa-user text-gray-400 mr-1"></i> 使用者名稱 (Username)
+                        </label>
+                        <input type="text" id="login-username" required class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-gray-800" placeholder="例如: admin">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="block text-gray-700 text-sm font-bold" for="login-password">
+                                <i class="fa-solid fa-lock text-gray-400 mr-1"></i> 登入密碼 (Password)
+                            </label>
+                        </div>
+                        <div class="relative">
+                            <input type="password" id="login-password" required class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-gray-800 pr-10" placeholder="請輸入密碼">
+                            <button type="button" onclick="togglePassword('login-password')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                <i id="eye-login-password" class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-sm">
+                        <label class="flex items-center text-gray-600">
+                            <input type="checkbox" class="rounded border-gray-300 text-blue-600 mr-1.5 focus:ring-blue-500">
+                            記住登入憑證 (Remember Token)
+                        </label>
+                    </div>
+
+                    <button type="submit" id="btn-login" class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
+                        <span>進行安全登入 (Sign In)</span>
+                        <i class="fa-solid fa-right-to-bracket"></i>
+                    </button>
+                </form>
+            </div>
+
+            <!-- ============================== 註冊表單區塊 ============================== -->
+            <div id="register-form-wrapper" class="hidden">
+                <form id="register-form" onsubmit="handleRegister(event)" class="space-y-5">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-1.5" for="reg-username">
+                            <i class="fa-solid fa-user-tag text-gray-400 mr-1"></i> 新創帳號 (Username)
+                        </label>
+                        <input type="text" id="reg-username" required class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-gray-800" placeholder="請輸入 3 個字元以上的用戶名">
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-1.5" for="reg-password">
+                            <i class="fa-solid fa-key text-gray-400 mr-1"></i> 安全密碼 (Password)
+                        </label>
+                        <div class="relative">
+                            <input type="password" id="reg-password" required class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-gray-800 pr-10" placeholder="設定你的強效密碼">
+                            <button type="button" onclick="togglePassword('reg-password')" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                <i id="eye-reg-password" class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-gray-700 text-sm font-bold mb-1.5" for="reg-confirm">
+                            <i class="fa-solid fa-circle-check text-gray-400 mr-1"></i> 確認密碼 (Confirm Password)
+                        </label>
+                        <input type="password" id="reg-confirm" required class="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-gray-800" placeholder="請再次輸入密碼以作確認">
+                    </div>
+
+                    <button type="submit" id="btn-register" class="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
+                        <span>建立新會員帳密 (Sign Up)</span>
+                        <i class="fa-solid fa-user-plus"></i>
+                    </button>
+                </form>
+            </div>
+
+            <!-- 返回首頁 -->
+            <div class="mt-6 pt-4 border-t border-gray-200 text-center">
+                <a href="/" class="text-sm text-gray-500 hover:text-blue-600 font-semibold transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-arrow-left"></i>返回留言板首頁
+                </a>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 前端互動與 API 調用 JavaScript -->
+    <script>
+        // 切換登入與註冊卡片
+        function switchCard(mode) {
+            const loginWrapper = document.getElementById('login-form-wrapper');
+            const registerWrapper = document.getElementById('register-form-wrapper');
+            const tabLogin = document.getElementById('tab-login');
+            const tabRegister = document.getElementById('tab-register');
+
+            if (mode === 'login') {
+                loginWrapper.classList.remove('hidden');
+                registerWrapper.classList.add('hidden');
+                
+                tabLogin.className = "flex-1 py-3 text-center font-bold text-blue-600 border-b-2 border-blue-600 focus:outline-none transition-all duration-300";
+                tabRegister.className = "flex-1 py-3 text-center font-bold text-gray-500 hover:text-blue-600 focus:outline-none transition-all duration-300";
+            } else {
+                loginWrapper.classList.add('hidden');
+                registerWrapper.classList.remove('hidden');
+
+                tabLogin.className = "flex-1 py-3 text-center font-bold text-gray-500 hover:text-blue-600 focus:outline-none transition-all duration-300";
+                tabRegister.className = "flex-1 py-3 text-center font-bold text-blue-600 border-b-2 border-blue-600 focus:outline-none transition-all duration-300";
+            }
+        }
+
+        // 切換顯示/隱藏密碼
+        function togglePassword(inputId) {
+            const input = document.getElementById(inputId);
+            const eyeIcon = document.getElementById(`eye-${inputId}`);
+            if (input.type === 'password') {
+                input.type = 'text';
+                eyeIcon.className = "fa-solid fa-eye-slash";
+            } else {
+                input.type = 'password';
+                eyeIcon.className = "fa-solid fa-eye";
+            }
+        }
+
+        // 顯示通知訊息
+        function showAlert(type, message) {
+            const alertBox = document.getElementById('alert-box');
+            const alertIcon = document.getElementById('alert-icon');
+            const alertMsg = document.getElementById('alert-message');
+
+            alertBox.classList.remove('hidden');
+            alertMsg.innerText = message;
+
+            if (type === 'success') {
+                alertBox.className = "mb-4 p-4 rounded-xl shadow-md border fade-transition flex items-center gap-3 bg-emerald-50 border-emerald-200 text-emerald-800";
+                alertIcon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
+            } else if (type === 'error') {
+                alertBox.className = "mb-4 p-4 rounded-xl shadow-md border fade-transition flex items-center gap-3 bg-rose-50 border-rose-200 text-rose-800";
+                alertIcon.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i>';
+            } else {
+                alertBox.className = "mb-4 p-4 rounded-xl shadow-md border fade-transition flex items-center gap-3 bg-amber-50 border-amber-200 text-amber-800";
+                alertIcon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
+            }
+        }
+
+        // 處理會員註冊 (AJAX POST)
+        function handleRegister(e) {
+            e.preventDefault();
+            const username = document.getElementById('reg-username').value.trim();
+            const password = document.getElementById('reg-password').value;
+            const confirm = document.getElementById('reg-confirm').value;
+
+            // 簡單前端安全驗證
+            if (password !== confirm) {
+                showAlert('error', '❌ 兩次輸入的密碼不一致！');
+                return;
+            }
+
+            const btn = document.getElementById('btn-register');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin"></i> 處理註冊中...';
+
+            fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            })
+            .then(res => {
+                btn.disabled = false;
+                btn.innerHTML = '建立新會員帳密 (Sign Up) <i class="fa-solid fa-user-plus"></i>';
+                
+                if (res.status === 201) return res.json();
+                return res.json().then(err => { throw new Error(err.message || '註冊發生錯誤！'); });
+            })
+            .then(data => {
+                showAlert('success', `🎉 ${data.message}`);
+                // UX 好體驗：自動將使用者名稱帶入登入框並自動轉換到登入頁籤
+                document.getElementById('login-username').value = username;
+                document.getElementById('login-password').value = '';
+                setTimeout(() => {
+                    switchCard('login');
+                    showAlert('success', `👉 註冊成功！密碼已加密，請輸入剛設定的密碼登入。`);
+                }, 1500);
+            })
+            .catch(err => {
+                showAlert('error', `❌ ${err.message}`);
+            });
+        }
+
+        // 處理會員登入與獲取 JWT (AJAX POST)
+        function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+
+            const btn = document.getElementById('btn-login');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-circle-notch animate-spin"></i> 正在安全核實中...';
+
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            })
+            .then(res => {
+                btn.disabled = false;
+                btn.innerHTML = '進行安全登入 (Sign In) <i class="fa-solid fa-right-to-bracket"></i>';
+
+                if (res.status === 200) return res.json();
+                return res.json().then(err => { throw new Error(err.message || '用戶名或密碼不正確！'); });
+            })
+            .then(data => {
+                // 將 JWT Token 安全儲存於 localStorage 中
+                localStorage.setItem('jwt_token', data.token);
+                localStorage.setItem('username', data.username);
+                
+                showAlert('success', `✅ ${data.message} 即將進入安全通道。`);
+                
+                // 1 秒後自動重定向回首頁留言板
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
+            })
+            .catch(err => {
+                showAlert('error', `❌ 認證失敗：${err.message}`);
+            });
+        }
+    </script>
+</body>
+</html>
